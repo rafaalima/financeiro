@@ -15,8 +15,8 @@ class BancoController extends Controller
 
     public function create()
     {
-        return view('bancos.create');
-    }
+        return view('bancos.create'); //teste
+    } 
 
     public function store(Request $request)
     {
