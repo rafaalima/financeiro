@@ -1,6 +1,7 @@
 *.log
 .DS_Store
 .env
+.env.*
 .env.backup
 .env.production
 .phpactor.json
@@ -19,6 +20,9 @@
 /storage/*.key
 /storage/pail
 /vendor
+/bootstrap/cache/*.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+npm-debug.log
+yarn-error.log
