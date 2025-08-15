@@ -6,9 +6,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Meu Financeiro</title>
-    <link rel="stylesheet" href="{{ asset('css/app.css') }}">
-<script src="{{ asset('js/app.js') }}"></script>
-
+    @vite(['resources/css/app.css','resources/js/app.js'])
 </head>
 
 <body class="antialiased min-h-screen bg-slate-100 flex items-center justify-center px-4">
