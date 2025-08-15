@@ -12,7 +12,7 @@
     <link rel="apple-touch-icon" href="{{ asset('brand/apple-touch-icon.png') }}"> {{-- opcional --}}
     <meta name="theme-color" content="#4f46e5">
 
-    @vite(['resources/css/app.css','resources/js/app.js'])
+
 </head>
 
 <body class="min-h-screen bg-slate-100">
