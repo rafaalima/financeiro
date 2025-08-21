@@ -31,37 +31,45 @@
                 <p class="mt-2 text-xs text-gray-500">Período: {{ $periodoLabel }}</p>
             </form>
 
-            {{-- KPIs --}}
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="bg-white shadow rounded-2xl p-5">
-                    <div class="text-sm text-gray-500">Receitas</div>
-                    <div class="mt-1 text-2xl font-bold text-emerald-600">
+            {{-- CARDS / KPIs (4 na mesma linha) --}}
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {{-- Receitas --}}
+                <div class="rounded-xl p-4 bg-emerald-50 border border-emerald-200">
+                    <div class="text-sm text-emerald-700 font-medium">Receitas</div>
+                    <div class="text-2xl font-semibold text-emerald-900">
                         R$ {{ number_format($receitas, 2, ',', '.') }}
                     </div>
                 </div>
 
-                <div class="bg-white shadow rounded-2xl p-5">
-                    <div class="text-sm text-gray-500">Despesas</div>
-                    <div class="mt-1 text-2xl font-bold text-rose-600">
+                {{-- Despesas --}}
+                <div class="rounded-xl p-4 bg-rose-50 border border-rose-200">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm text-rose-700 font-medium">Despesas</div>
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-white border border-rose-200 text-rose-600">todas</span>
+                    </div>
+                    <div class="text-2xl font-semibold text-rose-900">
                         R$ {{ number_format($despesas, 2, ',', '.') }}
+                    </div>
+                    <div class="mt-1 text-[12px] text-rose-700">
+                        (Pagas: R$ {{ number_format($despesasPagas ?? 0, 2, ',', '.') }})
                     </div>
                 </div>
 
-                {{-- Card Bancos com detalhe --}}
-                <div x-data="{ open: false }" class="bg-white shadow rounded-2xl p-5">
+                
+
+                {{-- Bancos (detalhes) --}}
+                <div x-data="{ open: false }" class="rounded-xl p-4 bg-sky-50 border border-sky-200">
                     <div class="flex items-start justify-between">
                         <div>
-                            <div class="text-sm text-gray-500">Bancos</div>
-                            <div class="mt-1 text-2xl font-bold text-slate-700">
-                                R$ {{ number_format($saldoBancos, 2, ',', '.') }}
+                            <div class="text-sm text-sky-700 font-medium">Bancos</div>
+                            <div class="text-2xl font-semibold text-sky-900">
+                                R$ {{ number_format($saldoBancos ?? 0, 2, ',', '.') }}
                             </div>
                         </div>
 
                         @if(($bancosDetalhe ?? collect())->count())
-                        <button
-                            type="button"
-                            @click="open = !open"
-                            class="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">
+                        <button type="button" @click="open = !open"
+                            class="text-[11px] px-2 py-0.5 rounded-full bg-white border border-sky-200 text-sky-700">
                             <span x-show="!open">Detalhes</span>
                             <span x-show="open">Ocultar</span>
                         </button>
@@ -69,7 +77,7 @@
                     </div>
 
                     @if(($bancosDetalhe ?? collect())->count())
-                    <ul x-show="open" x-transition class="mt-3 space-y-1 text-sm text-gray-700">
+                    <ul x-show="open" x-transition class="mt-3 space-y-1 text-sm text-sky-900">
                         @foreach($bancosDetalhe as $bk)
                         <li class="flex items-center justify-between">
                             <span>{{ $bk->nome }}</span>
@@ -77,25 +85,22 @@
                         </li>
                         @endforeach
                     </ul>
-
-                    {{-- opcional: link para a página de bancos --}}
                     <div x-show="open" class="mt-2">
-                        <a href="{{ route('bancos.index') }}"
-                            class="text-xs text-indigo-600 hover:text-indigo-700 underline">
+                        <a href="{{ route('bancos.index') }}" class="text-xs text-indigo-600 hover:text-indigo-700 underline">
                             Ver todos os bancos
                         </a>
                     </div>
                     @endif
                 </div>
-
-
-                <div class="bg-white shadow rounded-2xl p-5">
-                    <div class="text-sm text-gray-500">Total em bancos</div>
-                    <div class="mt-1 text-2xl font-bold {{ $saldo >= 0 ? 'text-indigo-700' : 'text-rose-700' }}">
-                        R$ {{ number_format($saldo, 2, ',', '.') }}
+                {{-- Total em bancos --}}
+                <div class="rounded-xl p-4 bg-sky-50 border border-sky-200">
+                    <div class="text-sm text-sky-700 font-medium">Saldo</div>
+                    <div class="text-2xl font-semibold {{ ($saldoBancos ?? 0) >= 0 ? 'text-sky-900' : 'text-rose-700' }}">
+                        R$ {{ number_format($saldoBancos ?? 0, 2, ',', '.') }}
                     </div>
                 </div>
             </div>
+
 
             {{-- Gráficos principais --}}
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">

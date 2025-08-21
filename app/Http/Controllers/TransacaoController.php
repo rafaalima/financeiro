@@ -5,233 +5,200 @@ namespace App\Http\Controllers;
 use App\Models\Transacao;
 use App\Models\Banco;
 use App\Models\Categoria;
+use App\Models\Fornecedor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Support\Carbon;
+use Carbon\Carbon;
+
 
 class TransacaoController extends Controller
 {
     public function index(Request $request)
     {
-        $userId = auth()->id();
+        $filtroDescricao   = $request->string('q')->toString();
+        $filtroTipo        = $request->string('tipo')->toString();       // 'receita' | 'despesa' (via categoria)
+        $filtroStatus      = $request->string('status')->toString();     // 'pendente' | 'pago'
+        $filtroBanco       = $request->integer('banco_id');
+        $filtroCategoria   = $request->integer('categoria_id');
+        $filtroFornecedor  = $request->integer('fornecedor_id');
+        $dataIni           = $request->date('data_ini');
+        $dataFim           = $request->date('data_fim');
 
-        $inicio        = $request->input('inicio'); // yyyy-mm-dd
-        $fim           = $request->input('fim');
-        $categoria_id  = $request->input('categoria_id');
-        $status        = $request->input('status');
-        $banco_id      = $request->input('banco_id');
-        $fornecedor_id = $request->input('fornecedor_id');
+        /** LISTAGEM **/
+        $q = Transacao::query()
+            ->with(['categoria', 'banco', 'fornecedor'])
+            ->doPeriodo($dataIni, $dataFim)
+            ->doBanco($filtroBanco)
+            ->daCategoria($filtroCategoria)
+            ->doFornecedor($filtroFornecedor)
+            ->busca($filtroDescricao);
 
-        $table = (new Transacao)->getTable(); // "transacoes"
+        // Filtro por "tipo" AGORA via CATEGORIA (não existe coluna 'tipo' em transacoes)
+        if ($filtroTipo === 'receita') {
+            $q->receita();
+        } elseif ($filtroTipo === 'despesa') {
+            $q->despesa();
+        }
 
-        // LISTA (qualificando colunas)
-        $q = Transacao::with(['categoria', 'fornecedor', 'banco'])
-            ->where("$table.user_id", $userId)
-            ->when($inicio && $fim,      fn($qq) => $qq->whereBetween("$table.data", [$inicio, $fim]))
-            ->when($inicio && !$fim,     fn($qq) => $qq->where("$table.data", '>=', $inicio))
-            ->when(!$inicio && $fim,     fn($qq) => $qq->where("$table.data", '<=', $fim))
-            ->when($categoria_id,        fn($qq) => $qq->where("$table.categoria_id", $categoria_id))
-            ->when($status,              fn($qq) => $qq->where("$table.status", $status))
-            ->when($banco_id,            fn($qq) => $qq->where("$table.banco_id", $banco_id))
-            ->when($fornecedor_id,       fn($qq) => $qq->where("$table.fornecedor_id", $fornecedor_id))
-            ->orderBy("$table.data", 'desc');
+        if ($filtroStatus) {
+            $q->where('status', $filtroStatus);
+        }
 
-        // TOTAIS (mesmos filtros + ignorar soft-delete)
-        $agg = DB::table($table)
-            ->where("$table.user_id", $userId)
-            ->whereNull("$table.deleted_at")
-            ->when($inicio && $fim,      fn($qq) => $qq->whereBetween("$table.data", [$inicio, $fim]))
-            ->when($inicio && !$fim,     fn($qq) => $qq->where("$table.data", '>=', $inicio))
-            ->when(!$inicio && $fim,     fn($qq) => $qq->where("$table.data", '<=', $fim))
-            ->when($categoria_id,        fn($qq) => $qq->where("$table.categoria_id", $categoria_id))
-            ->when($status,              fn($qq) => $qq->where("$table.status", $status))
-            ->when($banco_id,            fn($qq) => $qq->where("$table.banco_id", $banco_id))
-            ->when($fornecedor_id,       fn($qq) => $qq->where("$table.fornecedor_id", $fornecedor_id))
-            ->join('categorias', "$table.categoria_id", '=', 'categorias.id')
-            ->selectRaw("
-                COALESCE(SUM(CASE WHEN LOWER(categorias.tipo) = 'receita' THEN $table.valor ELSE 0 END), 0) AS receitas,
-                COALESCE(SUM(CASE WHEN LOWER(categorias.tipo) = 'despesa' THEN $table.valor ELSE 0 END), 0) AS despesas
-            ")
-            ->first();
+        $transacoes = $q->orderByDesc('data')
+            ->orderBy('id', 'desc')
+            ->paginate(12)
+            ->withQueryString();
 
-        $receitas = (float) ($agg->receitas ?? 0);
-        $despesas = (float) ($agg->despesas ?? 0);
-        $saldo    = $receitas - $despesas;
+        /** TOTAIS (mesmos filtros-base, exceto status) **/
+        $base = Transacao::query()
+            ->doPeriodo($dataIni, $dataFim)
+            ->doBanco($filtroBanco)
+            ->daCategoria($filtroCategoria)
+            ->doFornecedor($filtroFornecedor)
+            ->busca($filtroDescricao);
 
-        $transacoes  = $q->paginate(12)->withQueryString();
-        $categorias  = \App\Models\Categoria::orderBy('nome')->get();
-        $bancos      = \App\Models\Banco::orderBy('nome')->get();
-        $fornecedores= \App\Models\Fornecedor::orderBy('nome')->get();
+        // Totais por TIPO via CATEGORIA
+        $receitas      = (clone $base)->receita()->sum('valor');
+        $despesas      = (clone $base)->despesa()->sum('valor');               // todas as despesas
+        $despesasPagas = (clone $base)->despesa()->paga()->sum('valor');       // apenas pagas
+
+        // SALDO = receitas - despesas PAGAS
+        $saldo = $receitas - $despesasPagas;
+
+        // Listas para filtros
+        $categorias   = Categoria::orderBy('nome')->get();
+        $bancos       = Banco::orderBy('nome')->get();
+        $fornecedores = Fornecedor::orderBy('nome')->get();
 
         return view('transacoes.index', compact(
-            'transacoes','categorias','bancos','fornecedores',
-            'receitas','despesas','saldo'
+            'transacoes',
+            'categorias',
+            'bancos',
+            'fornecedores',
+            'receitas',
+            'despesas',
+            'despesasPagas',
+            'saldo'
         ));
     }
 
     public function create()
     {
-        $categorias   = \App\Models\Categoria::orderBy('nome')->get();
-        $bancos       = \App\Models\Banco::orderBy('nome')->get();
-        $fornecedores = \App\Models\Fornecedor::orderBy('nome')->get();
+        // Se a view create precisar de listas para selects, passe aqui também
+        $categorias   = Categoria::orderBy('nome')->get();
+        $bancos       = Banco::orderBy('nome')->get();
+        $fornecedores = Fornecedor::orderBy('nome')->get();
 
         return view('transacoes.create', compact('categorias', 'bancos', 'fornecedores'));
     }
 
     public function store(Request $request)
-{
-    $data = $request->validate([
-        'descricao'     => ['required','string','max:255'],
-        'valor'         => ['required','numeric'],
-        'data'          => ['required','date'],
-        'categoria_id'  => ['required','exists:categorias,id'],
-        'banco_id'      => ['nullable','exists:bancos,id'],
-        'fornecedor_id' => ['nullable','exists:fornecedores,id'],
-        'status'        => ['required','in:pendente,pago'],
-        'observacao'    => ['nullable','string'],
-        'parcelar'      => ['nullable','boolean'],
-        'parcelas'      => ['nullable','integer','min:1','max:240'],
-    ]);
+    {
+        $data = $request->validate([
+            'data'          => ['required', 'date'],
+            'descricao'     => ['required', 'string', 'max:255'],
+            'status'        => ['required', 'in:pendente,pago'],
+            'valor'         => ['required', 'numeric', 'min:0'],
+            'categoria_id'  => ['required', 'exists:categorias,id'],
+            'banco_id'      => ['nullable', 'exists:bancos,id'],
+            'fornecedor_id' => ['nullable', 'exists:fornecedores,id'],
+            // campo de parcelamento vindo do form; se não existir, trate como 1
+            'parcela_total' => ['nullable', 'integer', 'min:1'],
+        ]);
 
-    $parcelas = (int)($data['parcelas'] ?? 1);
-    if (!($data['parcelar'] ?? false)) $parcelas = 1;
+        $userId        = auth()->id();
+        $totalParcelas = max(1, (int)($data['parcela_total'] ?? 1));
+        $totalValor    = (float)$data['valor'];
+        $dataPrimeira  = Carbon::parse($data['data']);
+        $grupo         = Str::uuid()->toString();
 
-    $userId = auth()->id();
+        // Converte para centavos para dividir sem erro de ponto flutuante
+        $centavosTotal = (int) round($totalValor * 100);
+        $centavosBase  = intdiv($centavosTotal, $totalParcelas);
+        $resto         = $centavosTotal - ($centavosBase * $totalParcelas);
 
-    DB::transaction(function () use ($data, $parcelas, $userId) {
-        $grupo        = $parcelas > 1 ? (string) Str::uuid() : null;
-        $valorTotal   = (float) $data['valor'];
-        $valorParcela = round($valorTotal / $parcelas, 2);
-        $acumulado    = 0.0;
+        DB::transaction(function () use (
+            $data,
+            $userId,
+            $totalParcelas,
+            $dataPrimeira,
+            $grupo,
+            $centavosBase,
+            $resto
+        ) {
+            for ($i = 1; $i <= $totalParcelas; $i++) {
+                // Distribui o resto (+1 centavo nas primeiras N parcelas)
+                $valorParcelaCent = $centavosBase + ($i <= $resto ? 1 : 0);
+                $valorParcela     = $valorParcelaCent / 100;
 
-        // tipo da categoria (receita|despesa)
-        $tipo = $this->tipoCategoria((int)$data['categoria_id']);
-
-        for ($i = 1; $i <= $parcelas; $i++) {
-            $valorAtual = ($i < $parcelas) ? $valorParcela : round($valorTotal - $acumulado, 2);
-            $acumulado += $valorAtual;
-
-            $tx = Transacao::create([
-                'user_id'       => $userId,
-                'descricao'     => $data['descricao'] . ($parcelas > 1 ? " ({$i}/{$parcelas})" : ''),
-                'valor'         => $valorAtual,
-                'data'          => Carbon::parse($data['data'])->addMonthsNoOverflow($i - 1),
-                'categoria_id'  => $data['categoria_id'],
-                'banco_id'      => $data['banco_id'] ?? null,
-                'fornecedor_id' => $data['fornecedor_id'] ?? null,
-                'status'        => $data['status'],
-                'observacao'    => $data['observacao'] ?? null,
-                'parcela_num'   => $i,
-                'parcela_total' => $parcelas,
-                'grupo_uuid'    => $grupo,
-            ]);
-
-            // aplica no saldo do banco se já veio como "pago"
-            if ($tx->status === 'pago' && $tx->banco_id) {
-                $this->aplicarEfeitoNoBanco((int)$tx->banco_id, $tipo, (float)$tx->valor, +1);
+                Transacao::create([
+                    'user_id'        => $userId,
+                    'descricao'      => $data['descricao'] . ($totalParcelas > 1 ? " ({$i}/{$totalParcelas})" : ''),
+                    'status'         => $data['status'],              // normalmente 'pendente'
+                    'valor'          => $valorParcela,
+                    'data'           => $dataPrimeira->copy()->addMonths($i - 1),
+                    'categoria_id'   => $data['categoria_id'],
+                    'banco_id'       => $data['banco_id'] ?? null,
+                    'fornecedor_id'  => $data['fornecedor_id'] ?? null,
+                    'parcela_num'    => $totalParcelas > 1 ? $i : null,
+                    'parcela_total'  => $totalParcelas > 1 ? $totalParcelas : null,
+                    'grupo_uuid'     => $totalParcelas > 1 ? $grupo : null,
+                ]);
             }
-        }
-    });
+        });
 
-    return redirect()->route('transacoes.index')
-        ->with('success', 'Transação(ões) salva(s) com sucesso!');
-}
-
+        return redirect()->route('transacoes.index')
+            ->with('success', 'Transação' . ($totalParcelas > 1 ? ' parcelada' : '') . ' criada com sucesso.');
+    }
 
     public function edit(Transacao $transacao)
     {
-        // segurança: só o dono pode editar
-       // abort_unless((int)$transacao->user_id === (int)auth()->id(), 403);
+        $categorias   = Categoria::orderBy('nome')->get();
+        $bancos       = Banco::orderBy('nome')->get();
+        $fornecedores = Fornecedor::orderBy('nome')->get();
 
-        $categorias   = \App\Models\Categoria::orderBy('nome')->get();
-        $bancos       = \App\Models\Banco::orderBy('nome')->get();
-        $fornecedores = \App\Models\Fornecedor::orderBy('nome')->get();
-
-        return view('transacoes.edit', compact('transacao','categorias','bancos','fornecedores'));
+        return view('transacoes.edit', compact('transacao', 'categorias', 'bancos', 'fornecedores'));
     }
 
     public function update(Request $request, Transacao $transacao)
     {
-        // opcional: segurança
-        // abort_unless((int)$transacao->user_id === (int)auth()->id(), 403);
-    
+        // REMOVIDO 'tipo' da validação (não existe em transacoes)
         $data = $request->validate([
-            'descricao'     => ['required','string','max:255'],
-            'valor'         => ['required','numeric'],
-            'data'          => ['required','date'],
-            'categoria_id'  => ['required','exists:categorias,id'],
-            'banco_id'      => ['nullable','exists:bancos,id'],
-            'fornecedor_id' => ['nullable','exists:fornecedores,id'],
-            'status'        => ['required','in:pendente,pago'],
-            'observacao'    => ['nullable','string'],
+            'data'          => ['required', 'date'],
+            'descricao'     => ['required', 'string', 'max:255'],
+            'status'        => ['required', 'in:pendente,pago'],
+            'valor'         => ['required', 'numeric', 'min:0'],
+            'categoria_id'  => ['required', 'exists:categorias,id'],
+            'banco_id'      => ['nullable', 'exists:bancos,id'],
+            'fornecedor_id' => ['nullable', 'exists:fornecedores,id'],
         ]);
-    
-        DB::transaction(function () use ($transacao, $data) {
-            // estado antigo
-            $transacao->load('categoria');
-            $oldBankId = $transacao->banco_id;
-            $oldStatus = $transacao->status;
-            $oldValor  = (float)$transacao->valor;
-            $oldTipo   = $transacao->categoria?->tipo ?? 'despesa';
-    
-            // atualiza
-            $transacao->update($data);
-    
-            // estorna efeito antigo (se era pago e tinha banco)
-            if ($oldStatus === 'pago' && $oldBankId) {
-                $this->aplicarEfeitoNoBanco((int)$oldBankId, $oldTipo, $oldValor, -1);
-            }
-    
-            // aplica efeito novo (se agora é pago e tem banco)
-            if ($transacao->status === 'pago' && $transacao->banco_id) {
-                $newTipo = $this->tipoCategoria((int)$transacao->categoria_id);
-                $this->aplicarEfeitoNoBanco((int)$transacao->banco_id, $newTipo, (float)$transacao->valor, +1);
-            }
-        });
-    
-        return redirect()->route('transacoes.index')->with('success', 'Transação atualizada!');
+
+        $transacao->update($data);
+
+        return redirect()->route('transacoes.index')->with('success', 'Transação atualizada com sucesso.');
     }
-    
 
     public function destroy(Transacao $transacao)
-{
-    // opcional: segurança
-    // abort_unless((int)$transacao->user_id === (int)auth()->id(), 403);
+    {
+        $transacao->delete();
+        return back()->with('success', 'Transação excluída.');
+    }
 
-    DB::transaction(function () use ($transacao) {
-        $transacao->refresh()->load('categoria');
-
-        if ($transacao->status === 'pago' && $transacao->banco_id) {
-            $tipo = $transacao->categoria?->tipo ?? 'despesa';
-            $this->aplicarEfeitoNoBanco((int)$transacao->banco_id, $tipo, (float)$transacao->valor, -1);
+    public function marcarPago(Transacao $transacao)
+    {
+        // (opcional) garante que a transação é do usuário logado
+        if ($transacao->user_id !== auth()->id()) {
+            abort(403);
         }
 
-        $transacao->delete(); // Soft delete (ou forceDelete() se quiser hard delete)
-    });
+        // já está pago? não faça nada
+        if ($transacao->status === 'pago') {
+            return back()->with('success', 'Transação já está marcada como paga.');
+        }
 
-    return redirect()->route('transacoes.index')->with('success', 'Transação excluída!');
-}
+        $transacao->update(['status' => 'pago']);
 
-    
-
-    /* ============================
-       Helpers de saldo do banco
-       ============================ */
-
-       private function aplicarEfeitoNoBanco(int $bancoId, string $tipoCategoria, float $valor, int $sinal = +1): void
-       {
-           // $sinal = +1 aplica; $sinal = -1 estorna
-           $delta = ($tipoCategoria === 'receita' ? +1 : -1) * $valor * $sinal;
-       
-           Banco::where('id', $bancoId)
-               ->lockForUpdate()                 // evita “corrida”
-               ->increment('saldo_inicial', $delta);
-       }
-       
-       private function tipoCategoria(int $categoriaId): string
-       {
-           return (string) Categoria::where('id', $categoriaId)->value('tipo'); // 'receita' | 'despesa'
-       }
-           
+        return back()->with('success', 'Transação marcada como paga.');
+    }
 }

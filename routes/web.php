@@ -13,17 +13,6 @@ use App\Http\Controllers\ReportController;
 
 /*
 |--------------------------------------------------------------------------
-| Home: se logado → dashboard; senão → login
-|--------------------------------------------------------------------------
-*/
-Route::get('/', function () {
-    return auth()->check()
-        ? redirect()->route('dashboard')
-        : redirect()->route('login');
-});
-
-/*
-|--------------------------------------------------------------------------
 | Rotas de autenticação (Breeze/Fortify)
 |--------------------------------------------------------------------------
 */
@@ -51,7 +40,25 @@ Route::middleware('auth')->group(function () {
     Route::resource('categorias', CategoriaController::class);
     Route::resource('transacoes', \App\Http\Controllers\TransacaoController::class)
     ->parameters(['transacoes' => 'transacao']); 
+    Route::patch('/transacoes/{transacao}/marcar-pago', [\App\Http\Controllers\TransacaoController::class, 'marcarPago'])
+    ->name('transacoes.marcarPago');
+
+    
 });
+
+
+
+/*
+|--------------------------------------------------------------------------
+| Home: se logado → dashboard; senão → login
+|--------------------------------------------------------------------------
+*/
+Route::get('/', function () {
+    return auth()->check()
+        ? redirect()->route('dashboard')
+        : redirect()->route('login');
+});
+
 
 /*
 |--------------------------------------------------------------------------

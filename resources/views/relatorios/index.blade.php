@@ -75,27 +75,54 @@
                 </div>
             </form>
 
-            {{-- KPIs --}}
+            {{-- KPIs (estilo igual ao index) --}}
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-white shadow rounded-2xl p-5">
-                    <div class="text-sm text-gray-500">Receitas (período)</div>
-                    <div class="mt-1 text-2xl font-bold text-emerald-600">
-                        R$ {{ number_format($receitasPeriodo,2,',','.') }}
+                {{-- Receitas (período) --}}
+                <div class="rounded-xl p-4 bg-emerald-50 border border-emerald-200">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm text-emerald-700 font-medium">Receitas</div>
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-white border border-emerald-200 text-emerald-700">
+                            período
+                        </span>
+                    </div>
+                    <div class="text-2xl font-semibold text-emerald-900">
+                        R$ {{ number_format($receitasPeriodo, 2, ',', '.') }}
                     </div>
                 </div>
-                <div class="bg-white shadow rounded-2xl p-5">
-                    <div class="text-sm text-gray-500">Despesas (período)</div>
-                    <div class="mt-1 text-2xl font-bold text-rose-600">
-                        R$ {{ number_format($despesasPeriodo,2,',','.') }}
+
+                {{-- Despesas (período) --}}
+                <div class="rounded-xl p-4 bg-rose-50 border border-rose-200">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm text-rose-700 font-medium">Despesas</div>
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-white border border-rose-200 text-rose-600">
+                            período
+                        </span>
+                    </div>
+                    <div class="text-2xl font-semibold text-rose-900">
+                        R$ {{ number_format($despesasPeriodo, 2, ',', '.') }}
                     </div>
                 </div>
-                <div class="bg-white shadow rounded-2xl p-5">
-                    <div class="text-sm text-gray-500">Resultado (período)</div>
-                    <div class="mt-1 text-2xl font-bold {{ $resultadoPeriodo>=0 ? 'text-emerald-600':'text-rose-600' }}">
-                        R$ {{ number_format($resultadoPeriodo,2,',','.') }}
+
+                {{-- Resultado (período) --}}
+                @php
+                $positivo = ($resultadoPeriodo ?? 0) >= 0;
+                $bg = $positivo ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-200';
+                $txt1 = $positivo ? 'text-indigo-700' : 'text-rose-700';
+                $txt2 = $positivo ? 'text-indigo-900' : 'text-rose-900';
+                @endphp
+                <div class="rounded-xl p-4 {{ $bg }} border">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm {{ $txt1 }} font-medium">Resultado</div>
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-white border {{ $positivo ? 'border-indigo-200 text-indigo-600' : 'border-rose-200 text-rose-600' }}">
+                            período
+                        </span>
+                    </div>
+                    <div class="text-2xl font-semibold {{ $txt2 }}">
+                        R$ {{ number_format($resultadoPeriodo, 2, ',', '.') }}
                     </div>
                 </div>
             </div>
+
 
             {{-- Gráficos --}}
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
