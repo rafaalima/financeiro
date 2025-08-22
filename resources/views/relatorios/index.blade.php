@@ -21,12 +21,14 @@
                     </div>
                     <div>
                         <x-input-label value="Status" />
-                        <select name="status" class="mt-1 w-full rounded-lg border-gray-300">
-                            <option value="">—</option>
-                            <option value="pago" {{ $status==='pago'?'selected':'' }}>Pago</option>
-                            <option value="pendente" {{ $status==='pendente'?'selected':'' }}>Pendente</option>
+                        <select name="status" class="w-full border rounded-lg">
+                            <option value="">--</option>
+                            <option value="pago" @selected(request('status')==='pago' )>Pago</option>
+                            <option value="pendente" @selected(request('status')==='pendente' )>Pendente</option>
+                            <option value="todos" @selected(request('status')==='todos' )>Todos</option>
                         </select>
                     </div>
+
 
                     <div>
                         <x-input-label value="Categoria" />

@@ -94,3 +94,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/relatorios/export', [ReportController::class, 'exportCsv'])->name('relatorios.export');
     Route::get('/relatorios/pdf', [ReportController::class, 'exportPdf'])->name('relatorios.pdf'); 
 });
+
+// routes/web.php
+Route::post('/bancos/{banco}/reconciliar', [\App\Http\Controllers\BancoController::class, 'reconciliar'])
+    ->name('bancos.reconciliar')
+    ->middleware('auth');

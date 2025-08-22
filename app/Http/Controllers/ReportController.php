@@ -17,51 +17,60 @@ class ReportController extends Controller
     {
         $userId = auth()->id();
 
-        // Nomes reais das tabelas (evita erro com "fornecedors"/"fornecedores", etc.)
-        $t = (new Transacao)->getTable();   // ex.: transacaos
-        $c = (new Categoria)->getTable();   // ex.: categorias
-        $b = (new Banco)->getTable();       // ex.: bancos
-        $f = (new Fornecedor)->getTable();  // ex.: fornecedores
+        // Nomes reais das tabelas
+        $t = (new Transacao)->getTable();
+        $c = (new Categoria)->getTable();
+        $b = (new Banco)->getTable();
+        $f = (new Fornecedor)->getTable();
 
         // Filtros (padrão: mês atual)
         $inicio        = $request->input('inicio') ?: now()->startOfMonth()->toDateString();
         $fim           = $request->input('fim')    ?: now()->toDateString();
-        $status        = $request->input('status');           // pendente|pago|null
+        $status        = trim((string) $request->input('status')); // '', 'pago', 'pendente', 'todos'
         $categoria_id  = $request->input('categoria_id');
         $banco_id      = $request->input('banco_id');
         $fornecedor_id = $request->input('fornecedor_id');
 
-        // Base (Query Builder) — reaproveitada nos agregados
+        // Base (Query Builder)
         $base = DB::table($t)
             ->where("$t.user_id", $userId)
             ->when(Schema::hasColumn($t, 'deleted_at'), fn($q) => $q->whereNull("$t.deleted_at"))
             ->when($inicio && $fim, fn($q) => $q->whereBetween("$t.data", [$inicio, $fim]))
-            ->when($status, fn($q) => $q->where("$t.status", $status))
             ->when($categoria_id, fn($q) => $q->where("$t.categoria_id", $categoria_id))
             ->when($banco_id, fn($q) => $q->where("$t.banco_id", $banco_id))
             ->when($fornecedor_id, fn($q) => $q->where("$t.fornecedor_id", $fornecedor_id));
+
+        // >>> REGRA DE STATUS <<<
+        // default = apenas PAGAS; se usuário escolher, respeitamos; se 'todos', sem filtro.
+        if ($status === 'pago' || $status === 'pendente') {
+            $base->where("$t.status", $status);
+        } elseif ($status === 'todos') {
+            // não filtra
+        } else {
+            $base->where("$t.status", 'pago');
+        }
 
         // KPIs do período
         $agg = (clone $base)
             ->join("$c as c", "$t.categoria_id", '=', 'c.id')
             ->selectRaw("
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo) = 'receita' THEN $t.valor ELSE 0 END), 0) AS receitas,
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo) = 'despesa' THEN $t.valor ELSE 0 END), 0) AS despesas
-            ")
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo) = 'receita' THEN $t.valor ELSE 0 END), 0) AS receitas,
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo) = 'despesa' THEN $t.valor ELSE 0 END), 0) AS despesas
+        ")
             ->first();
 
         $receitasPeriodo  = (float)($agg->receitas ?? 0);
         $despesasPeriodo  = (float)($agg->despesas ?? 0);
         $resultadoPeriodo = $receitasPeriodo - $despesasPeriodo;
 
-        // Fluxo diário (linhas) – receitas e despesas por dia
+        // Fluxo diário (linhas)
         $fluxo = (clone $base)
             ->join("$c as c", "$t.categoria_id", '=', 'c.id')
             ->selectRaw("
-                DATE($t.data) as dia,
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo)='receita' THEN $t.valor ELSE 0 END),0) as rec,
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo)='despesa' THEN $t.valor ELSE 0 END),0) as desp
-            ")
+            DATE($t.data) as dia,
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo)='receita' THEN $t.valor ELSE 0 END),0) as rec,
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo)='despesa' THEN $t.valor ELSE 0 END),0) as desp
+        ")
             ->groupBy('dia')
             ->orderBy('dia')
             ->get();
@@ -99,10 +108,10 @@ class ReportController extends Controller
             ->leftJoin("$b as b", "$t.banco_id", '=', 'b.id')
             ->leftJoin("$c as c", "$t.categoria_id", '=', 'c.id')
             ->selectRaw("
-                COALESCE(b.nome, '—') as banco,
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo)='receita' THEN $t.valor ELSE 0 END),0) as receitas,
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo)='despesa' THEN $t.valor ELSE 0 END),0) as despesas
-            ")
+            COALESCE(b.nome, '—') as banco,
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo)='receita' THEN $t.valor ELSE 0 END),0) as receitas,
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo)='despesa' THEN $t.valor ELSE 0 END),0) as despesas
+        ")
             ->groupBy('banco')
             ->orderBy('banco')
             ->get();
@@ -112,10 +121,10 @@ class ReportController extends Controller
             ->leftJoin("$f as forn", "$t.fornecedor_id", '=', 'forn.id')
             ->leftJoin("$c as c", "$t.categoria_id", '=', 'c.id')
             ->selectRaw("
-                COALESCE(forn.nome, '—') as fornecedor,
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo)='receita' THEN $t.valor ELSE 0 END),0) as receitas,
-                COALESCE(SUM(CASE WHEN LOWER(c.tipo)='despesa' THEN $t.valor ELSE 0 END),0) as despesas
-            ")
+            COALESCE(forn.nome, '—') as fornecedor,
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo)='receita' THEN $t.valor ELSE 0 END),0) as receitas,
+            COALESCE(SUM(CASE WHEN LOWER(c.tipo)='despesa' THEN $t.valor ELSE 0 END),0) as despesas
+        ")
             ->groupBy('fornecedor')
             ->orderBy('fornecedor')
             ->get();
@@ -126,15 +135,30 @@ class ReportController extends Controller
         $fornecedores = Fornecedor::orderBy('nome')->get();
 
         return view('relatorios.index', compact(
-            'inicio','fim','status','categoria_id','banco_id','fornecedor_id',
-            'categorias','bancos','fornecedores',
-            'receitasPeriodo','despesasPeriodo','resultadoPeriodo',
-            'labelsDias','dataRecDia','dataDespDia',
-            'labelsDespCat','dataDespCat',
-            'labelsRecCat','dataRecCat',
-            'porBanco','porFornecedor'
+            'inicio',
+            'fim',
+            'status',
+            'categoria_id',
+            'banco_id',
+            'fornecedor_id',
+            'categorias',
+            'bancos',
+            'fornecedores',
+            'receitasPeriodo',
+            'despesasPeriodo',
+            'resultadoPeriodo',
+            'labelsDias',
+            'dataRecDia',
+            'dataDespDia',
+            'labelsDespCat',
+            'dataDespCat',
+            'labelsRecCat',
+            'dataRecCat',
+            'porBanco',
+            'porFornecedor'
         ));
     }
+
 
     public function exportCsv(Request $request)
     {
@@ -154,12 +178,12 @@ class ReportController extends Controller
 
         $rows = DB::table($t)
             ->where("$t.user_id", $userId)
-            ->when(Schema::hasColumn($t,'deleted_at'), fn($q)=>$q->whereNull("$t.deleted_at"))
-            ->when($inicio && $fim, fn($q)=>$q->whereBetween("$t.data", [$inicio,$fim]))
-            ->when($status, fn($q)=>$q->where("$t.status",$status))
-            ->when($categoria_id, fn($q)=>$q->where("$t.categoria_id",$categoria_id))
-            ->when($banco_id, fn($q)=>$q->where("$t.banco_id",$banco_id))
-            ->when($fornecedor_id, fn($q)=>$q->where("$t.fornecedor_id",$fornecedor_id))
+            ->when(Schema::hasColumn($t, 'deleted_at'), fn($q) => $q->whereNull("$t.deleted_at"))
+            ->when($inicio && $fim, fn($q) => $q->whereBetween("$t.data", [$inicio, $fim]))
+            ->when($status, fn($q) => $q->where("$t.status", $status))
+            ->when($categoria_id, fn($q) => $q->where("$t.categoria_id", $categoria_id))
+            ->when($banco_id, fn($q) => $q->where("$t.banco_id", $banco_id))
+            ->when($fornecedor_id, fn($q) => $q->where("$t.fornecedor_id", $fornecedor_id))
             ->leftJoin("$c as c", "$t.categoria_id", '=', 'c.id')
             ->leftJoin("$b as b", "$t.banco_id", '=', 'b.id')
             ->leftJoin("$f as forn", "$t.fornecedor_id", '=', 'forn.id') // único join de fornecedor
@@ -177,9 +201,9 @@ class ReportController extends Controller
 
         $filename = 'transacoes_' . now()->format('Ymd_His') . '.csv';
 
-        return response()->streamDownload(function() use ($rows){
+        return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Data','Descrição','Valor','Status','Categoria','Tipo','Banco','Fornecedor'], ';');
+            fputcsv($out, ['Data', 'Descrição', 'Valor', 'Status', 'Categoria', 'Tipo', 'Banco', 'Fornecedor'], ';');
             foreach ($rows as $r) {
                 fputcsv($out, [
                     \Carbon\Carbon::parse($r->data)->format('d/m/Y'),
@@ -244,7 +268,7 @@ class ReportController extends Controller
             ->join("$c as c", "$t.categoria_id", '=', 'c.id')
             ->whereRaw("LOWER(c.tipo)='despesa'")
             ->select('c.nome', DB::raw("SUM($t.valor) as total"))
-            ->groupBy('c.id','c.nome')
+            ->groupBy('c.id', 'c.nome')
             ->orderByDesc('total')
             ->get();
 
@@ -253,7 +277,7 @@ class ReportController extends Controller
             ->join("$c as c", "$t.categoria_id", '=', 'c.id')
             ->whereRaw("LOWER(c.tipo)='receita'")
             ->select('c.nome', DB::raw("SUM($t.valor) as total"))
-            ->groupBy('c.id','c.nome')
+            ->groupBy('c.id', 'c.nome')
             ->orderByDesc('total')
             ->get();
 
@@ -325,4 +349,3 @@ class ReportController extends Controller
         // ou ->stream($filename) para abrir no navegador
     }
 }
-
